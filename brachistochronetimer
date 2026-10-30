@@ -1,0 +1,57 @@
+const byte START_PIN = A1;
+const byte FINISH_PIN = A0;
+const unsigned long PRINT_EVERY_MS = 10;
+const unsigned long HOLD_MS = 4000;
+
+char label = 'C';
+int runNo = 0;
+bool running = false, armed = false;
+bool lastS = true, lastF = true;
+unsigned long tStart = 0, lastPrint = 0, holdUntil = 0;
+float lastRun = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(START_PIN, INPUT_PULLUP);
+  pinMode(FINISH_PIN, INPUT_PULLUP);
+  Serial.println("live view: START(A1) FINISH(A0), 1 = clear, 0 = ball");
+}
+
+void loop() {
+  bool s = digitalRead(START_PIN);
+  bool f = digitalRead(FINISH_PIN);
+  unsigned long now = micros();
+
+  if (millis() < holdUntil) { lastS = s; lastF = f; return; }
+
+  if (!running && lastS && !s) { armed = true; }
+  if (!lastS && s && (armed || running)) { tStart = now; running = true; armed = false; }
+  else if (running && lastF && !f) {
+    unsigned long dt = now - tStart;
+    lastRun = dt / 1e6;
+    runNo++;
+    Serial.print(">>> RUN "); Serial.print(runNo);
+    Serial.print(" ("); Serial.print(label); Serial.print("): ");
+    Serial.print(lastRun, 4); Serial.println(" s between sensors");
+    running = false;
+    holdUntil = millis() + HOLD_MS;
+  } else if (running && now - tStart > 3000000UL) {
+    Serial.println(">>> timeout: no finish trigger");
+    running = false;
+    holdUntil = millis() + HOLD_MS;
+  }
+  lastS = s; lastF = f;
+
+  if (millis() - lastPrint >= PRINT_EVERY_MS) {
+    lastPrint = millis();
+    Serial.print("START="); Serial.print(s);
+    Serial.print(" FINISH="); Serial.print(f);
+    Serial.print(running ? "  timing..." : armed ? "  at start " : "  ready    ");
+    Serial.print("  last run: "); Serial.print(lastRun, 4); Serial.println(" s");
+  }
+
+  if (Serial.available()) {
+    char c = toupper(Serial.read());
+    if (c == 'C' || c == 'S') { label = c; Serial.print("label "); Serial.println(label); }
+  }
+}
